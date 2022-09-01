@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"github.com/vishvananda/netlink"
+	nl "github.com/vishvananda/netlink/nl"
 )
 
 const (
@@ -26,6 +27,7 @@ type Netlink interface {
 	BridgeVlanAdd(netlink.Link, uint16, bool, bool, bool, bool) error
 	BridgeVlanDel(netlink.Link, uint16, bool, bool, bool, bool) error
 	LinkSetMTU(netlink.Link, int) error
+	BridgeVlanList() (map[int32][]*nl.BridgeVlanInfo, error)
 }
 
 // NetlinkWrapper wrapper for netlink package
@@ -97,6 +99,10 @@ func (n *NetlinkWrapper) BridgeVlanDel(link netlink.Link, vid uint16, pvid, unta
 	return netlink.BridgeVlanDel(link, vid, pvid, untagged, self, master)
 }
 
+func (n *NetlinkWrapper) BridgeVlanList() (map[int32][]*nl.BridgeVlanInfo, error) {
+	return netlink.BridgeVlanList()
+}
+
 // BridgePVIDVlanAdd configure port VLAN id for link
 func BridgePVIDVlanAdd(nlink Netlink, link netlink.Link, vlanID int) error {
 	// pvid, egress untagged
@@ -118,6 +124,21 @@ func BridgeTrunkVlanAdd(nlink Netlink, link netlink.Link, vlans []int) error {
 		}
 	}
 	return nil
+}
+
+// BridgeTrunkVlanDel remove vlans from trunk on link
+func BridgeTrunkVlanDel(nlink Netlink, link netlink.Link, vlans []int) error {
+	// egress tagged
+	for _, vlanID := range vlans {
+		if err := nlink.BridgeVlanDel(link, uint16(vlanID), false, false, false, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func BridgeVlanList(nlink Netlink) (map[int32][]*nl.BridgeVlanInfo, error) {
+	return nlink.BridgeVlanList()
 }
 
 // GetParentBridgeForLink returns linux bridge if provided link belongs to any.

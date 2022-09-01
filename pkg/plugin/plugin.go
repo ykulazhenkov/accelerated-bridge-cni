@@ -250,6 +250,14 @@ func (p *Plugin) CmdDel(args *skel.CmdArgs) error {
 		return err
 	}
 
+	// validate trunk settings
+	if len(netConf.Trunk) > 0 {
+		pluginConf.Trunk, err = config.SplitVlanIds(netConf.Trunk)
+		if err != nil {
+			return err
+		}
+	}
+
 	if pluginConf.Debug {
 		setDebugMode()
 	}

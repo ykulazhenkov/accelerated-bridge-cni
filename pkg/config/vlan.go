@@ -23,7 +23,7 @@ import (
 	"github.com/k8snetworkplumbingwg/accelerated-bridge-cni/pkg/types"
 )
 
-func splitVlanIds(trunks []types.Trunk) ([]int, error) {
+func SplitVlanIds(trunks []types.Trunk) ([]int, error) {
 	vlans := make(map[int]bool)
 	for _, item := range trunks {
 		var minID, maxID, id int

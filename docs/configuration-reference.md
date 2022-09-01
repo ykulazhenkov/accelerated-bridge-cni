@@ -18,6 +18,8 @@ The Accelerated Bridge CNI configures networks through a CNI spec configuration 
   Value must be an array of objects with trunk config, e.g.
   `[{"id": 42}, {"minID": 100, "maxID": 105}, {"id": 198, "minID": 200, "maxID": 210}]`,
   which means that trunk will allow folowing VLANs 42,100-105,198,200-210
+* `setupUplinkVLan` (bool, optional): In addition to applying vlans to the VF, also apply those same vlans to the uplink.
+  If the uplink PF is part of a bonded interface, apply the vlans to that.
 * `runtimeConfig` (dictionary, optional): CNI RuntimeConfig,
   `runtimeConfig.mac` is the only supported option for now, it takes precedence over top-level `mac` option;
   e.g. `runtimeConfig: {"mac": "CA:FE:C0:FF:EE:00"}`
@@ -31,6 +33,13 @@ It is also possible to use `vlan` and `trunk` options together.
 In this case, VLAN ID from `vlan` option will be used by the bridge as
 native VLAN for VF. This means that bridge will add tag from `vlan` option to
 all untagged frames from VF and allow VF to send and receive tagged frames with tags from `trunk` option.
+
+
+When a VF with VLANs are added and the `setupUplinkVlan` option is set, the CNI will attempt to discover if the
+cooresponding uplink PF is part of a bonded interface, and if so use that to apply additional
+"allowed" ingress VLANs. This way externally tagged traffic can be allowed into the bridge for that VF.
+Note that when removing VF this option will also remove VLANs from the uplink/bond,
+but only if there are not other VF using those VLANs.
 
 
 _Note: The CNI assumes the bridge is present and configured. 

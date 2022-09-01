@@ -87,7 +87,7 @@ func (c *Config) ParseConf(bytes []byte, conf *localtypes.PluginConf) error {
 
 	// validate trunk settings
 	if len(conf.NetConf.Trunk) > 0 {
-		conf.Trunk, err = splitVlanIds(conf.NetConf.Trunk)
+		conf.Trunk, err = SplitVlanIds(conf.NetConf.Trunk)
 		if err != nil {
 			return err
 		}

@@ -7,6 +7,7 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"
+	nl "github.com/vishvananda/netlink/nl"
 
 	"github.com/k8snetworkplumbingwg/accelerated-bridge-cni/pkg/types"
 	"github.com/k8snetworkplumbingwg/accelerated-bridge-cni/pkg/utils"
@@ -289,15 +290,80 @@ func (m *manager) AttachRepresentor(conf *types.PluginConf) error {
 		if err = utils.BridgeTrunkVlanAdd(m.nLink, rep, conf.Trunk); err != nil {
 			return fmt.Errorf("failed to add trunk VLAN for representor %s: %v", conf.Representor, err)
 		}
+		log.Info().Msgf("Setting multiple VLANs for rep %s: %v", conf.Representor, conf.Trunk)
 	}
 
 	if conf.Vlan > 0 {
 		if err = utils.BridgePVIDVlanAdd(m.nLink, rep, conf.Vlan); err != nil {
 			return fmt.Errorf("failed to set VLAN for representor %s: %v", conf.Representor, err)
 		}
+		log.Info().Msgf("Setting PVID VLAN for rep %s: %d", conf.Representor, conf.Vlan)
+	}
+
+	// add vlan config to uplink if configured to do so
+	if conf.SetUplinkVlan {
+		if err = m.addUplinkVlans(conf); err != nil {
+			return fmt.Errorf("failed to add vlan to parent uplink %v", err)
+		}
 	}
 
 	return nil
+}
+
+func (m *manager) addUplinkVlans(conf *types.PluginConf) error {
+	var uplink netlink.Link
+	var err error
+
+	uplink, err = m.getPFUplinkOrBond(conf.PFName)
+	if err != nil {
+		return fmt.Errorf("failed to lookup PF for VF-Representor - PFName:%s: VF:%s %v",
+			conf.PFName, conf.Representor, err)
+	}
+
+	var vlans []int
+	if len(conf.Trunk) > 0 {
+		vlans = conf.Trunk
+	}
+
+	if conf.Vlan > 0 {
+		vlans = append(vlans, conf.Vlan)
+	}
+
+	if err = utils.BridgeTrunkVlanAdd(m.nLink, uplink, vlans); err != nil {
+		return fmt.Errorf("failed to add VLANs to parent uplink %s: %v - %v", uplink.Attrs().Name, vlans, err)
+	}
+	log.Info().Msgf("Setting VLANs for uplink %s: %v", uplink.Attrs().Name, vlans)
+
+	return nil
+}
+
+func (m *manager) getPFUplinkOrBond(pfname string) (netlink.Link, error) {
+	var uplink netlink.Link
+	var err error
+	uplink, err = m.nLink.LinkByName(pfname)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup PF %s: %v", pfname, err)
+	}
+
+	if uplink.Attrs().Slave != nil && uplink.Attrs().Slave.SlaveType() == "bond" {
+		var bondLink netlink.Link
+		bondLink, err = m.nLink.LinkByIndex(uplink.Attrs().MasterIndex)
+		if err != nil {
+			return nil, fmt.Errorf("failed to lookup bond interface from slave link master index - Name:%s MasterIndex:%d %v",
+				uplink.Attrs().Name, uplink.Attrs().MasterIndex, err)
+		}
+
+		_, isBond := bondLink.(*netlink.Bond)
+		if !isBond {
+			return nil, fmt.Errorf("master index for link is not a bond - PFName:%s Master Link:%s %v",
+				uplink.Attrs().Name, bondLink.Attrs().Name, err)
+		}
+		uplink = bondLink
+		log.Debug().Msgf("Using bond master as uplink: %s", uplink.Attrs().Name)
+	}
+
+	return uplink, nil
 }
 
 func (m *manager) DetachRepresentor(conf *types.PluginConf) error {
@@ -318,6 +384,88 @@ func (m *manager) DetachRepresentor(conf *types.PluginConf) error {
 		log.Info().Msgf("Restoring MTU %d on rep %s", conf.OrigRepState.MTU, conf.Representor)
 	}
 
+	// remove vlan config from uplink if configured to do so
+	if conf.SetUplinkVlan {
+		if err = m.deleteUplinkVlans(rep, conf); err != nil {
+			log.Warn().Msgf("Failed to delete trunk VLANs to parent uplink %v", err)
+		}
+	}
+
 	log.Info().Msgf("Detaching rep %s from the bridge %s", conf.Representor, conf.ActualBridge)
 	return m.nLink.LinkSetNoMaster(rep)
+}
+
+func (m *manager) deleteUplinkVlans(rep netlink.Link, conf *types.PluginConf) error {
+	var uplink netlink.Link
+	var err error
+
+	uplink, err = m.getPFUplinkOrBond(conf.PFName)
+	if err != nil {
+		return fmt.Errorf("failed to lookup PF for VF-Representor - PFName:%s: VF:%s %v",
+			conf.PFName, conf.Representor, err)
+	}
+
+	var vlans []int
+	if len(conf.Trunk) > 0 {
+		vlans = conf.Trunk
+	}
+
+	if conf.Vlan > 0 {
+		vlans = append(vlans, conf.Vlan)
+	}
+
+	var bridgeLink netlink.Link
+	bridgeLink, err = m.nLink.LinkByIndex(uplink.Attrs().MasterIndex)
+	if err != nil {
+		return fmt.Errorf("failed to lookup bridge index for interface:%s: %d %v",
+			uplink.Attrs().Name, uplink.Attrs().MasterIndex, err)
+	}
+
+	var currentbrif []string
+	currentbrif, err = utils.GetBridgeInterfaces(bridgeLink.Attrs().Name)
+	if err != nil {
+		return fmt.Errorf("failed to get bridge interfaces:%s: %v",
+			bridgeLink.Attrs().Name, err)
+	}
+
+	var allbrif map[int32][]*nl.BridgeVlanInfo
+	allbrif, _ = utils.BridgeVlanList(m.nLink)
+
+	var delvlans []int
+
+	for _, vlan := range vlans {
+		found := false
+
+	foundvlan:
+		for _, brif := range currentbrif {
+			brlink, iferr := m.nLink.LinkByName(brif)
+			if iferr != nil {
+				log.Warn().Msgf("could not lookup netlink info for %s: %v", brif, iferr)
+				continue
+			}
+
+			// skip the interface already being removed or the uplink, it obviously has these vlans.
+			// we are looking for any others
+			if rep.Attrs().Index == brlink.Attrs().Index || uplink.Attrs().Index == brlink.Attrs().Index {
+				continue
+			}
+
+			for _, bvlaninfo := range allbrif[int32(brlink.Attrs().Index)] {
+				if bvlaninfo.Vid == uint16(vlan) {
+					found = true
+					break foundvlan
+				}
+			}
+		}
+		if !found {
+			delvlans = append(delvlans, vlan)
+		}
+	}
+
+	if err = utils.BridgeTrunkVlanDel(m.nLink, uplink, delvlans); err != nil {
+		return fmt.Errorf("failed to delete VLANs to parent uplink %s: %v - %v", uplink.Attrs().Name, delvlans, err)
+	}
+	log.Info().Msgf("Deleting VLANs for uplink %s: %v", uplink.Attrs().Name, delvlans)
+
+	return nil
 }

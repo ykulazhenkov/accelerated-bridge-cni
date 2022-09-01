@@ -113,3 +113,18 @@ func HasUserspaceDriver(pciAddr string) (bool, error) {
 	}
 	return false, nil
 }
+
+func GetBridgeInterfaces(bridgename string) (brifs []string, err error) {
+	list := filepath.Join(NetDirectory, bridgename, "brif")
+	devices, err := os.ReadDir(list)
+
+	if err != nil {
+		return []string{}, err
+	}
+
+	for _, device := range devices {
+		brifs = append(brifs, device.Name())
+	}
+
+	return brifs, nil
+}
