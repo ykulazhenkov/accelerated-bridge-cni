@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"github.com/containernetworking/cni/pkg/skel"
-	"github.com/containernetworking/cni/pkg/types/current"
+	specTypes "github.com/containernetworking/cni/pkg/types/040"
 	"github.com/containernetworking/plugins/pkg/ns"
 
 	localtypes "github.com/k8snetworkplumbingwg/accelerated-bridge-cni/pkg/types"
@@ -14,7 +14,7 @@ type cmdContext struct {
 	pluginConf *localtypes.PluginConf
 
 	netNS  ns.NetNS
-	result *current.Result
+	result *specTypes.Result
 
 	errorHandlers []func()
 }

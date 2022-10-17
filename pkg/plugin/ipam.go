@@ -2,7 +2,8 @@ package plugin
 
 import (
 	"github.com/containernetworking/cni/pkg/types"
-	"github.com/containernetworking/cni/pkg/types/current"
+	specTypes "github.com/containernetworking/cni/pkg/types/040"
+	latestTypes "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/plugins/pkg/ipam"
 )
 
@@ -10,7 +11,7 @@ import (
 type IPAM interface {
 	ExecAdd(plugin string, netconf []byte) (types.Result, error)
 	ExecDel(plugin string, netconf []byte) error
-	ConfigureIface(ifName string, res *current.Result) error
+	ConfigureIface(ifName string, res *specTypes.Result) error
 }
 
 // ipamWrapper wrapper for ipam package
@@ -27,6 +28,10 @@ func (i *ipamWrapper) ExecDel(plugin string, netconf []byte) error {
 }
 
 // ConfigureIface is a wrapper for ipam.ConfigureIface
-func (i *ipamWrapper) ConfigureIface(ifName string, res *current.Result) error {
-	return ipam.ConfigureIface(ifName, res)
+func (i *ipamWrapper) ConfigureIface(ifName string, res *specTypes.Result) error {
+	r, err := res.GetAsVersion(latestTypes.ImplementedSpecVersion)
+	if err != nil {
+		return err
+	}
+	return ipam.ConfigureIface(ifName, r.(*latestTypes.Result))
 }

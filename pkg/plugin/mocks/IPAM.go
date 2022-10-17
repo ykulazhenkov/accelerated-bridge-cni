@@ -3,7 +3,7 @@
 package mocks
 
 import (
-	current "github.com/containernetworking/cni/pkg/types/current"
+	specTypes "github.com/containernetworking/cni/pkg/types/040"
 	mock "github.com/stretchr/testify/mock"
 
 	types "github.com/containernetworking/cni/pkg/types"
@@ -15,11 +15,11 @@ type IPAM struct {
 }
 
 // ConfigureIface provides a mock function with given fields: ifName, res
-func (_m *IPAM) ConfigureIface(ifName string, res *current.Result) error {
+func (_m *IPAM) ConfigureIface(ifName string, res *specTypes.Result) error {
 	ret := _m.Called(ifName, res)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(string, *current.Result) error); ok {
+	if rf, ok := ret.Get(0).(func(string, *specTypes.Result) error); ok {
 		r0 = rf(ifName, res)
 	} else {
 		r0 = ret.Error(0)

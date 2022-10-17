@@ -1,14 +1,17 @@
 package plugin
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
-	"github.com/containernetworking/cni/pkg/types/current"
+	specTypes "github.com/containernetworking/cni/pkg/types/040"
 	"github.com/containernetworking/plugins/pkg/ns"
+	v1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"
@@ -64,7 +67,7 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 	cmdCtx := &cmdContext{
 		args:       args,
 		pluginConf: &localtypes.PluginConf{},
-		result:     &current.Result{},
+		result:     &specTypes.Result{},
 	}
 	defer func() {
 		cmdCtx.handleError(err)
@@ -90,7 +93,7 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 	}
 	defer cmdCtx.netNS.Close()
 
-	cmdCtx.result.Interfaces = []*current.Interface{{
+	cmdCtx.result.Interfaces = []*specTypes.Interface{{
 		Name:    args.IfName,
 		Sandbox: cmdCtx.netNS.Path(),
 	}}
@@ -143,7 +146,44 @@ func (p *Plugin) CmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to save PluginConf %q", err)
 	}
 
-	return types.PrintResult(cmdCtx.result, current.ImplementedSpecVersion)
+	if err = p.updateDeviceInfo(cmdCtx); err != nil {
+		return fmt.Errorf("failed update DeviceInfo %q", err)
+	}
+
+	return types.PrintResult(cmdCtx.result, specTypes.ImplementedSpecVersion)
+}
+
+// updateDeviceInfo update device PCI device info if CNIDeviceInfoFile
+// if it exist in CNI config
+func (p *Plugin) updateDeviceInfo(cmdCtx *cmdContext) error {
+	var devInfo v1.DeviceInfo
+
+	if cmdCtx.pluginConf.RuntimeConfig.CNIDeviceInfoFile == "" {
+		return nil
+	}
+
+	bytes, err := os.ReadFile(cmdCtx.pluginConf.RuntimeConfig.CNIDeviceInfoFile)
+	if err != nil {
+		return fmt.Errorf("failed to read CNIDeviceInfoFile %q", err)
+	}
+
+	err = json.Unmarshal(bytes, &devInfo)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal CNIDeviceInfoFile %q", err)
+	}
+
+	if devInfo.Pci != nil && devInfo.Pci.VfRepresentorDevice == "" {
+		devInfo.Pci.VfRepresentorDevice = cmdCtx.pluginConf.Representor
+		bytes, err = json.Marshal(&devInfo)
+		if err != nil {
+			return fmt.Errorf("failed to marshal DeviceInfo to JSON %q", err)
+		}
+		err = os.WriteFile(cmdCtx.pluginConf.RuntimeConfig.CNIDeviceInfoFile, bytes, 0444)
+		if err != nil {
+			return fmt.Errorf("failed to update CNIDeviceInfoFile %q", err)
+		}
+	}
+	return nil
 }
 
 // mac address configuration can be supplied as
@@ -189,8 +229,8 @@ func (p *Plugin) configureIPAM(cmdCtx *cmdContext, macAddr string) error {
 	})
 
 	// Convert the IPAM result into the current Result type
-	var newResult *current.Result
-	if newResult, err = current.NewResultFromResult(ipamResult); err != nil {
+	var newResult *specTypes.Result
+	if newResult, err = specTypes.NewResultFromResult(ipamResult); err != nil {
 		return err
 	}
 
@@ -204,7 +244,7 @@ func (p *Plugin) configureIPAM(cmdCtx *cmdContext, macAddr string) error {
 
 	for _, ipc := range newResult.IPs {
 		// All addresses apply to the container interface (move from host)
-		ipc.Interface = current.Int(0)
+		ipc.Interface = specTypes.Int(0)
 	}
 
 	if !pluginConf.IsUserspaceDriver {

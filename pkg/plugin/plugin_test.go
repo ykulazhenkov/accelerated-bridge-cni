@@ -7,7 +7,7 @@ import (
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
-	"github.com/containernetworking/cni/pkg/types/current"
+	specTypes "github.com/containernetworking/cni/pkg/types/040"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/stretchr/testify/mock"
 
@@ -79,14 +79,13 @@ func getValidCmdArgs() *skel.CmdArgs {
 
 func getValidIPAMResult() types.Result {
 	_, ipNet, _ := net.ParseCIDR("192.168.100.101/24")
-	ipConf := current.IPConfig{
-		Version: "4",
+	ipConf := specTypes.IPConfig{
 		Address: *ipNet,
 		Gateway: net.ParseIP("192.168.100.1"),
 	}
-	return &current.Result{
-		CNIVersion: "0.2.0",
-		IPs:        []*current.IPConfig{&ipConf},
+	return &specTypes.Result{
+		CNIVersion: specTypes.ImplementedSpecVersion,
+		IPs:        []*specTypes.IPConfig{&ipConf},
 	}
 }
 
@@ -177,7 +176,7 @@ var _ = Describe("Plugin - test CNI command flows", func() {
 				successfullyExecAdd(true)
 			}
 			ipamMock.On("ConfigureIface", cmdArgs.IfName,
-				mock.MatchedBy(func(conf *current.Result) bool {
+				mock.MatchedBy(func(conf *specTypes.Result) bool {
 					return len(conf.Interfaces) > 0 && conf.Interfaces[0].Mac == testValidMAC
 				})).
 				Return(nil).Once()
@@ -254,7 +253,7 @@ var _ = Describe("Plugin - test CNI command flows", func() {
 			It("IPAM add returns no IPs", func() {
 				successfullySetupVF(true)
 				result := getValidIPAMResult()
-				result.(*current.Result).IPs = nil
+				result.(*specTypes.Result).IPs = nil
 				ipamMock.On("ExecAdd", pluginConf.IPAM.Type, cmdArgs.StdinData).
 					Return(result, nil).Once()
 				cleanupExecAdd()
