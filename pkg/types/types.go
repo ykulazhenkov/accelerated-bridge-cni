@@ -73,6 +73,6 @@ type PluginConf struct {
 	VFID int `json:"vfid"`
 	// VF names after in the container; used during deletion
 	ContIFNames string `json:"cont_if_names"`
-	// Internal presentation of VLAN Trunk config; we don't need this option in cache
-	Trunk []int `json:"-"`
+	// Internal presentation of VLAN Trunk config
+	Trunk []int `json:"trunk_vlan_list"`
 }
