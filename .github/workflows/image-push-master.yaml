@@ -33,7 +33,6 @@ jobs:
           platforms: linux/amd64
           tags: |
             ${{ env.IMAGE_NAME }}:latest-amd64
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
           file: ./Dockerfile
 
   build-and-push-arm64-accelerated-bridge-cni:
@@ -112,7 +111,7 @@ jobs:
 
     - name: Create manifest for multi-arch images
       run: |
-        docker buildx imagetools create -t ${{ env.IMAGE_NAME }}:latest \
+        docker buildx imagetools create -t ${{ env.IMAGE_NAME }}:latest -t ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}\
         ${{ env.IMAGE_NAME }}:latest-amd64 \
         ${{ env.IMAGE_NAME }}:latest-arm64 \
         ${{ env.IMAGE_NAME }}:latest-ppc64le
