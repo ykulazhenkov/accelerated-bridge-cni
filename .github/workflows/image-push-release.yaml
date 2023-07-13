@@ -67,8 +67,10 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
           tags: |
-            type=ref,event=tag
+            type=semver,pattern={{version}},enable=${{ contains(github.ref, 'refs/tags/v') }}
 
       - name: build and push accelerated-bridge-cni
         uses: docker/build-push-action@v4
